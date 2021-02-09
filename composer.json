@@ -1,0 +1,17 @@
+{
+  "name": "digitoimistodude/avoine-sso-login",
+  "type": "wordpress-plugin",
+  "description": "Support SSO login from Avoine Sense",
+  "homepage": "https://github.com/digitoimistodude/avoine-sso-login",
+  "keywords": [
+    "wordpress",
+    "plugin"
+  ],
+  "license": "GPL-3.0+",
+  "version": "1.0.0",
+  "authors": [{
+    "name": "Timi Wahalahti",
+    "email": "timi@dude.fi",
+    "homepage": "https://github.com/timiwahalahti"
+  }]
+}
