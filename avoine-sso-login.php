@@ -2,16 +2,18 @@
 /**
  * Plugin Name: Avoine SSO Login
  * Description: Support SSO login from Avoine Sense
- * Plugin URI: http://dude.fi
- * Author: Timi Wahalahti, Digitoimisto Dude Oy
- * Author URI: http://dude.fi
- * Version: 1.0.0
- * License: GPLv3
+ * Plugin URI: http://#
+ * Author: Author
+ * Author URI: http://#
+ * Version: 1.1.0
+ * License: GPL2
+ * Text Domain: text-domain
+ * Domain Path: domain/path
  *
  * @Author:             Timi Wahalahti, Digitoimisto Dude Oy (https://dude.fi)
  * @Date:               2019-09-24 10:21:21
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2021-02-09 14:55:14
+ * @Last Modified time: 2021-05-28 12:25:04
  *
  * @package avoine-sso
  */
@@ -39,8 +41,8 @@ class Avoine_SSO_Login {
    */
   private function __construct() {
     add_action( 'init', array( $this, 'capture_login_redirect' ) );
+    add_action( 'wp_logout', array( $this, 'maybe_redirect_sso_user_to_sso_logout' ) );
     add_action( 'init', array( $this, 'capture_sso_logout' ) );
-    add_filter( 'logout_url', array( $this, 'maybe_modify_sso_user_logout_url' ), 20, 2 );
   } // end __construct
 
   /**
@@ -174,6 +176,19 @@ class Avoine_SSO_Login {
   } // end capture_login_redirect
 
   /**
+   * If logged out user was from SSO, send further down the line
+   * to perform also SSO logout.
+   *
+   * @since 1.1.0
+   */
+  public static function maybe_redirect_sso_user_to_sso_logout( $user_id ) {
+    if ( self::is_sso_user( $user_id ) ) {
+      wp_redirect( apply_filters( 'avoine_sso_logout_url', 'https://tunnistus.avoine.fi/sso-logout/' ) );
+      exit;
+    }
+  } // end maybe_redirect_sso_user_to_sso_logout
+
+  /**
    *  Check if request is to logout sso user out. Request comes from
    *  Avoine logout page in hidden iframe.
    *
@@ -211,23 +226,6 @@ class Avoine_SSO_Login {
     wp_safe_redirect( apply_filters( 'avoine_sso_logout_redirect_non_sso_user', home_url() ) );
     exit;
   } // end capture_sso_logout
-
-  /**
-   *  Modify return of wp_logout_url if user is sso user.
-   *
-   *  @since  0.1.0
-   *  @param  string $logout_url url where logout happens.
-   *  @param  string $redirect   where to redirect after logout, does not apply to sso logout.
-   *  @return string             url where logout happens.
-   */
-  public static function maybe_modify_sso_user_logout_url( $logout_url, $redirect ) {
-    // return default logout url if not sso user
-    if ( ! self::is_sso_user() ) {
-      return $logout_url;
-    }
-
-    return apply_filters( 'avoine_sso_logout_url', 'https://tunnistus.avoine.fi/sso-logout/' );
-  } // end maybe_modify_sso_user_logout_url
 
   /**
    *  Do requests to Avoine SSO server.
