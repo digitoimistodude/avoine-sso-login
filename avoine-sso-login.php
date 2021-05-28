@@ -13,7 +13,7 @@
  * @Author:             Timi Wahalahti, Digitoimisto Dude Oy (https://dude.fi)
  * @Date:               2019-09-24 10:21:21
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2021-05-28 13:37:16
+ * @Last Modified time: 2021-05-28 15:29:39
  *
  * @package avoine-sso
  */
@@ -410,7 +410,7 @@ class Avoine_SSO_Login {
       $save_active = 'active';
     }
 
-    $expiration = apply_filters( 'auth_cookie_expiration', DAY_IN_SECONDS * 2 );
+    $expiration = apply_filters( 'auth_cookie_expiration', DAY_IN_SECONDS * 2, $wp_user_id, false );
     $expiration = apply_filters( 'avoine_sso_is_user_active_expiration', $expiration );
 
     wp_cache_set( 'user_activity_' . $wp_user_id, $save_active, 'avoine_sso_login', $expiration );
