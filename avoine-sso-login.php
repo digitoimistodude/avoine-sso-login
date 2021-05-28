@@ -5,7 +5,7 @@
  * Plugin URI: http://#
  * Author: Author
  * Author URI: http://#
- * Version: 1.1.0
+ * Version: 1.1.1
  * License: GPL2
  * Text Domain: text-domain
  * Domain Path: domain/path
@@ -13,7 +13,7 @@
  * @Author:             Timi Wahalahti, Digitoimisto Dude Oy (https://dude.fi)
  * @Date:               2019-09-24 10:21:21
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2021-05-28 12:25:04
+ * @Last Modified time: 2021-05-28 13:37:16
  *
  * @package avoine-sso
  */
@@ -410,7 +410,10 @@ class Avoine_SSO_Login {
       $save_active = 'active';
     }
 
-    wp_cache_set( 'user_activity_' . $wp_user_id, $save_active, 'avoine_sso_login', MINUTE_IN_SECONDS * 30 );
+    $expiration = apply_filters( 'auth_cookie_expiration', DAY_IN_SECONDS * 2 );
+    $expiration = apply_filters( 'avoine_sso_is_user_active_expiration', $expiration );
+
+    wp_cache_set( 'user_activity_' . $wp_user_id, $save_active, 'avoine_sso_login', $expiration );
 
     return $active;
   } // is_sso_user_active
