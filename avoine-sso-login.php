@@ -5,7 +5,7 @@
  * Plugin URI: http://dude.fi
  * Author: Digitoimisto Dude Oy
  * Author URI: http://dude.fi
- * Version: 1.2.0
+ * Version: 1.2.1
  * License: GPL2
  * Text Domain: text-domain
  * Domain Path: domain/path
@@ -13,7 +13,7 @@
  * @Author:             Timi Wahalahti, Digitoimisto Dude Oy (https://dude.fi)
  * @Date:               2019-09-24 10:21:21
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2021-12-28 13:52:27
+ * @Last Modified time: 2021-12-28 14:23:51
  *
  * @package avoine-sso
  */
@@ -81,6 +81,8 @@ class Avoine_SSO_Login {
     if ( empty( $service ) ) {
       return;
     }
+
+    $return_url = urlencode( $return_url );
 
     return "https://tunnistus.avoine.fi/sso-login/?service={$service}&return={$return_url}";
   } // end get_sso_login_url
@@ -168,6 +170,9 @@ class Avoine_SSO_Login {
 
     // update WP user SSO ID
     update_user_meta( $wp_user->ID, 'avoine_sso_' . $sso_user->idp . '_ssoid', $sso_user->id );
+
+    // do our custom action allowing developers to hook
+    do_action( 'avoine_sso_before_sso_login', $wp_user, $sso_user );
 
     // log our user in
     wp_set_current_user( $wp_user->ID, $wp_user->user_login );
