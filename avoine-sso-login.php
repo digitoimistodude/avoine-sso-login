@@ -2,10 +2,10 @@
 /**
  * Plugin Name: Avoine SSO Login
  * Description: Support SSO login from Avoine Sense
- * Plugin URI: http://#
- * Author: Author
- * Author URI: http://#
- * Version: 1.1.1
+ * Plugin URI: http://dude.fi
+ * Author: Digitoimisto Dude Oy
+ * Author URI: http://dude.fi
+ * Version: 1.2.0
  * License: GPL2
  * Text Domain: text-domain
  * Domain Path: domain/path
@@ -13,7 +13,7 @@
  * @Author:             Timi Wahalahti, Digitoimisto Dude Oy (https://dude.fi)
  * @Date:               2019-09-24 10:21:21
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2021-05-28 15:29:39
+ * @Last Modified time: 2021-12-28 13:52:27
  *
  * @package avoine-sso
  */
@@ -162,6 +162,9 @@ class Avoine_SSO_Login {
       wp_safe_redirect( apply_filters( 'avoine_sso_login_redirect_failed', wp_login_url() ) );
       return;
     }
+
+    // update WP user SSO idp for later activity checks
+    update_user_meta( $wp_user->ID, 'avoine_sso_idp', $sso_user->idp );
 
     // update WP user SSO ID
     update_user_meta( $wp_user->ID, 'avoine_sso_' . $sso_user->idp . '_ssoid', $sso_user->id );
@@ -432,9 +435,16 @@ class Avoine_SSO_Login {
       return false;
     }
 
+    // try to get sso identifying unique id, bail if fails
+    $sso_mapping_id = self::get_sso_user_mapping_id( $sso_user );
+    if ( empty( $sso_mapping_id ) ) {
+      return false;
+    }
+
     // get wp users attached to sso user
     $users = get_users( array(
-      'search'  => $sso_user->local_id,
+      'meta_key'    => 'avoine_sso_mapping_id',
+      'meta_value'  => $sso_mapping_id,
     ) );
 
     // user does not exist, create a one
@@ -466,10 +476,19 @@ class Avoine_SSO_Login {
       return false;
     }
 
+    // try to get sso identifying unique id, bail if fails
+    $sso_mapping_id = self::get_sso_user_mapping_id( $sso_user );
+    if ( empty( $sso_mapping_id ) ) {
+      return false;
+    }
+
+    // make unique identifier for WP user in case sso local ids collide for some reason
+    $user_wp_unique = wp_date( 'U' ) . $sso_user->local_id;
+
     // gather userdata for new user, developers can alter with filter
     $userdata = apply_filters( 'avoine_sso_create_userdata', array(
-      'user_email' => $sso_user->local_id . '@' . wp_parse_url( get_site_url() )['host'],
-      'user_login' => $sso_user->local_id,
+      'user_email' => $user_wp_unique . '@' . wp_parse_url( get_site_url() )['host'],
+      'user_login' => $user_wp_unique,
       'first_name' => '',
       'last_name'  => '',
       'user_pass'  => null,
@@ -487,6 +506,7 @@ class Avoine_SSO_Login {
     }
 
     // save sso details to newly created wp user
+    update_user_meta( $new_user_id, 'avoine_sso_mapping_id', $sso_mapping_id );
     update_user_meta( $new_user_id, 'avoine_sso_idp', $sso_user->idp );
     update_user_meta( $new_user_id, 'avoine_sso_' . $sso_user->idp . '_ssoid', $sso_user->id );
     update_user_meta( $new_user_id, 'avoine_sso_' . $sso_user->idp . '_local_id', $sso_user->local_id );
@@ -496,6 +516,26 @@ class Avoine_SSO_Login {
 
     return get_userdata( $new_user_id );
   } // end create_wp_user
+
+  private static function get_sso_user_mapping_id( $sso_user ) {
+     // bail if no sso user
+    if ( empty( $sso_user ) ) {
+      return false;
+    }
+
+    // get all user information from sso server
+    $sso_user_info = self::get_sso_user_information( $sso_user->id );
+
+    // bail if we cant get all information
+    if ( empty( $sso_user_info ) ) {
+      return false;
+    }
+
+    $mapping_id = $sso_user->local_id;
+    $mapping_id = apply_filters( 'avoine_sso_user_mapping_id', $mapping_id, $sso_user, $sso_user_info );
+
+    return $mapping_id;
+  } // end get_sso_user_mapping_id
 } // end class
 
 add_action( 'plugins_loaded', array( 'Avoine_SSO_Login', 'get_instance' ) );
