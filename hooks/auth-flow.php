@@ -3,7 +3,7 @@
  * @Author: Timi Wahalahti
  * @Date:   2022-04-22 13:53:26
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2022-04-25 14:32:30
+ * @Last Modified time: 2022-04-25 15:20:22
  *
  * @package avoine-sso-login
  */
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *  Check if request is redirect from SSO login and log our
  *  WP user in if coming from succesfull SSO login.
  *
- *  @since  0.1.0
+ *  @since  2.0.0
  */
 function capture_login_redirect() {
   // bail if not coming from SSI login
@@ -74,7 +74,7 @@ function capture_login_redirect() {
   update_user_meta( $wp_user->ID, 'avoine_sso_' . $sso_user->idp . '_ssoid', $sso_user->id );
 
   // do our custom action allowing developers to hook
-  do_action( 'avoine-sso-login\succes\auth\before', $wp_user, $sso_user );
+  do_action( 'avoine_sso_login\succes\auth\before', $wp_user, $sso_user );
   do_action( 'avoine_sso_before_sso_login', $wp_user, $sso_user ); // legacy support
 
   // log our WP user in
@@ -83,7 +83,7 @@ function capture_login_redirect() {
 
   // do login actions
   do_action( 'wp_login', $wp_user->user_login, $wp_user );
-  do_action( 'avoine-sso-login\succes\auth\after', $wp_user, $sso_user );
+  do_action( 'avoine_sso_login\succes\auth\after', $wp_user, $sso_user );
   do_action( 'avoine_sso_login', $wp_user->user_login, $wp_user ); // legacy support
 } // end capture_login_redirect
 
@@ -91,7 +91,7 @@ function capture_login_redirect() {
  *  Check if request is to logout sso user out. Request comes from
  *  Avoine logout page in hidden iframe.
  *
- *  @since  0.1.0
+ *  @since  2.0.0
  */
 function capture_sso_logout() {
   // if user is not logged in, there's no need to try to logout
@@ -120,12 +120,12 @@ function capture_sso_logout() {
   wp_set_current_user( 0 );
 
   // run our action allowing developers to hook
-  do_action( 'avoine-sso-login\logout\after' );
+  do_action( 'avoine_sso_login\logout\after' );
   do_action( 'avoine_sso_after_logout' ); // legacy support
 
   // show logout message in case user sees the sso logput page and stop further execution
   $logout_message = 'You have been logged out. <a href="' . home_url() . '">Back to the site.</a>';
-  $logout_message = apply_filters( 'avoine-sso-login\logout\message', $logout_message );
+  $logout_message = apply_filters( 'avoine_sso_login\logout\message', $logout_message );
   $logout_message = apply_filters( 'avoine_sso_logout_message', $logout_message ); // legacy support
 
   echo esc_html( $logout_message );
@@ -136,7 +136,7 @@ function capture_sso_logout() {
  * If logged out user was from SSO, send further down the line
  * to perform also SSO logout.
  *
- * @since 1.1.0
+ * @since 2.0.0
  */
 function maybe_redirect_sso_user_to_sso_logout( $user_id ) {
   if ( ! is_sso_user( $user_id ) ) {
@@ -148,13 +148,19 @@ function maybe_redirect_sso_user_to_sso_logout( $user_id ) {
   }
 } // end maybe_redirect_sso_user_to_sso_logout
 
+/**
+ * If SSO login is caputured but for some reason WP shadow user
+ * login fails, do something smart.
+ *
+ * @since 2.0.0
+ */
 function handle_failed_login() {
-  // logout
+  // logout in case WP user login was done
   do_action( 'wp_login_failed', '' );
   wp_logout();
 
   // do our custom action allowing developers to hook
-  do_action( 'avoine-sso-login\failed' );
+  do_action( 'avoine_sso_login\failed' );
   do_action( 'avoine_sso_login_failed' ); // legacy support
 
   // redirect to better place, defauls to login url

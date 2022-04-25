@@ -3,7 +3,7 @@
  * @Author: Timi Wahalahti
  * @Date:   2022-04-22 13:34:53
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2022-04-25 14:49:05
+ * @Last Modified time: 2022-04-25 15:12:02
  *
  * @package avoine-sso-login
  */
@@ -16,6 +16,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Call the SSO service API.
+ *
+ * @since  2.0.0
  * @param  string $sso_user_id SSO user to check things againts.
  * @param  string $method      SSO API call method.
  * @return boolean/json        Boolean false if API call fails, json data if succesful.
