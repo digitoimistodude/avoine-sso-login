@@ -6,8 +6,8 @@ Plugin integrates Avoine SSO to WordPress and creates an shadow user in WordPres
 
 Plugin uses few environment variables for configuration.
 
-`AVOINE_SSO_SERVICE_ID` is the ID for SSO
-`AVOINE_SSO_KEY` is the communications key for SSO
+* `AVOINE_SSO_SERVICE_ID` is the ID for SSO
+* `AVOINE_SSO_KEY` is the communications key for SSO
 
 ## Auth flow
 
