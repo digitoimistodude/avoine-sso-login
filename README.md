@@ -1,6 +1,6 @@
 # Avoine SSO  Login
 
-Plugin integrates Avoine SSO to WordPress and creates an shadow user in WordPress for users that log in via SSO. Using object cache like [Object Cache Pro](https://objectcache.pro), [Redis Object Cache](https://wordpress.org/plugins/redis-cache/), memcahed or something similar as plugin leverages [WP_Object_Cache](https://developer.wordpress.org/reference/classes/wp_object_cache/) class for SSO user activity checks.
+Plugin integrates Avoine SSO to WordPress and creates an shadow user in WordPress for users that log in via SSO. Using object cache like [Object Cache Pro](https://objectcache.pro), [Redis Object Cache](https://wordpress.org/plugins/redis-cache/), memcahed or something similar as plugin leverages [WP_Object_Cache](https://developer.wordpress.org/reference/classes/wp_object_cache/) class for SSO user activity checks is recommended.
 
 ## Setup
 
