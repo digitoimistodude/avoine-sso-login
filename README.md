@@ -28,17 +28,10 @@ Plugin uses few environment variables for configuration.
 
 ## Functions
 
-`avoine_sso_get_login_url`
-returns login url for SSO service. Accepts one parameter for redirect url, to which user will be redirected after succesfull login.
-
-`avoine_sso_get_logout_url`
-returns logout url for SSO service.
-
-`avoine_is_sso_user`
-returns boolean based on if user loggedin from SSO. Accepts one parameter for WP user ID, defaults to current user if not given.
-
-`avoine_is_sso_user_active`
-returns boolean based on if user is still active based on SSO data. Accepts one parameter for WP user ID, defaults to current user if not given. Caches the status in object cache (redis, memcached or similar).
+* `avoine_sso_get_login_url` returns login url for SSO service. Accepts one parameter for redirect url, to which user will be redirected after succesfull login.
+* `avoine_sso_get_logout_url` returns logout url for SSO service.
+* `avoine_is_sso_user` returns boolean based on if user loggedin from SSO. Accepts one parameter for WP user ID, defaults to current user if not given.
+* `avoine_is_sso_user_active` returns boolean based on if user is still active based on SSO data. Accepts one parameter for WP user ID, defaults to current user if not given. Caches the status in object cache (redis, memcached or similar).
 
 ## Hooks
 
