@@ -1,561 +1,120 @@
 <?php
 /**
  * Plugin Name: Avoine SSO Login
- * Description: Support SSO login from Avoine Sense
+ * Description: Integrate login to Avoine SSO.
  * Plugin URI: http://dude.fi
  * Author: Digitoimisto Dude Oy
  * Author URI: http://dude.fi
- * Version: 1.2.1
- * License: GPL2
- * Text Domain: text-domain
- * Domain Path: domain/path
+ * Version: 2.0.0
+ * License: GPLv3
  *
- * @Author:             Timi Wahalahti, Digitoimisto Dude Oy (https://dude.fi)
+ * @Author:             Digitoimisto Dude Oy (https://dude.fi)
  * @Date:               2019-09-24 10:21:21
  * @Last Modified by:   Timi Wahalahti
- * @Last Modified time: 2021-12-28 14:23:51
+ * @Last Modified time: 2022-04-25 14:19:56
  *
- * @package avoine-sso
+ * @package avoine-sso-login
  */
+
+namespace Avoine_SSO_Login;
 
 if ( ! defined( 'ABSPATH' ) ) {
   exit;
 }
 
+// External functions for themes and other plugins
+require plugin_dir_path( __FILE__ ) . 'inc/functions-public.php';
+
+// Internal functions
+require plugin_dir_path( __FILE__ ) . 'inc/api.php';
+require plugin_dir_path( __FILE__ ) . 'inc/login.php';
+require plugin_dir_path( __FILE__ ) . 'inc/user.php';
+
+// Miscellaneous hooks
+require plugin_dir_path( __FILE__ ) . 'hooks/misc.php';
+add_filter( 'allowed_redirect_hosts', __NAMESPACE__ . '\add_sso_service_domain_to_allowed_hosts' );
+add_filter( 'check_password',         __NAMESPACE__ . '\prevent_sso_user_login_with_wp_password', 999, 4 );
+add_filter( 'lostpassword_user_data', __NAMESPACE__ . '\prevent_sso_user_wp_password_reset', 10, 2 );
+add_filter( 'password_change_email',  __NAMESPACE__ . '\prevent_sso_user_wp_password_reset_email', 10, 2 );
+
+// Authentication flow hooks
+require plugin_dir_path( __FILE__ ) . 'hooks/auth-flow.php';
+add_action( 'init',       __NAMESPACE__ . '\capture_login_redirect' );
+add_action( 'init',       __NAMESPACE__ . '\capture_sso_logout' );
+add_action( 'wp_logout',  __NAMESPACE__ . '\maybe_redirect_sso_user_to_sso_logout' );
+
 /**
- * Hello.
+ * Get SSO service ID.
  */
-class Avoine_SSO_Login {
-
-  /**
-   *  Instance of this class.
-   *
-   *  @var null
-   */
-  private static $instance = null;
-
-  /**
-   *  Add hooks.
-   *
-   *  @since 0.1.0
-   */
-  private function __construct() {
-    add_action( 'init', array( $this, 'capture_login_redirect' ) );
-    add_action( 'wp_logout', array( $this, 'maybe_redirect_sso_user_to_sso_logout' ) );
-    add_action( 'init', array( $this, 'capture_sso_logout' ) );
-  } // end __construct
-
-  /**
-   *  Get instance and init the plugin.
-   *
-   *  @since  0.1.0
-   */
-  public static function get_instance() {
-    if ( null === self::$instance ) {
-      self::$instance = new self();
-    }
-
-    return self::$instance;
-  } // end get_instance
-
-  /**
-   *  Get login url to use for SSO logins.
-   *
-   *  @since  0.1.0
-   *  @param  string $return_url where to return after succesfull login, defaults to home url.
-   *  @return string             url to use for login.
-   */
-  public static function get_sso_login_url( $return_url = null ) {
-    // default to home url for return.
-    if ( empty( $return_url ) ) {
-      $return_url = home_url();
-    }
-
-    // get service ID for Avoine
-    $service = apply_filters( 'avoine_sso_service_id', getenv( 'AVOINE_SSO_SERVICE_ID' ) );
-
-    // filter return url
-    $return_url = apply_filters( 'avoine_sso_login_return_url', $return_url );
-
-    // bail if no service ID
-    if ( empty( $service ) ) {
-      return;
-    }
-
-    $return_url = urlencode( $return_url );
-
-    return "https://tunnistus.avoine.fi/sso-login/?service={$service}&return={$return_url}";
-  } // end get_sso_login_url
-
-  /**
-   *  Check if user is logged in from sso.
-   *
-   *  @since  0.1.0
-   *  @param  int $user_id user id to check, defaulst to current user.
-   *  @return boolean           true if user is logged in from sso, otherwise false.
-   */
-  public static function is_sso_user( $user_id = null ) {
-    // default to current user
-    if ( empty( $user_id ) ) {
-      $user_id = get_current_user_id();
-    }
-
-    // every sso uset should have idp stored, so try to get it
-    $sso_idp = get_user_meta( $user_id, 'avoine_sso_idp', true );
-
-    // no idp stored means that user is not logged in from sso
-    if ( empty( $sso_idp ) ) {
-      return false;
-    }
-
-    return true;
-  } // end is_sso_user
-
-  /**
-   *  Check if request is redirect from sso login and log our
-   *  WP user in if user is coming from succesfull sso login.
-   *
-   *  @since  0.1.0
-   */
-  public static function capture_login_redirect() {
-    // bail if not coming from sso login
-    if ( ! isset( $_POST['ssoid'] ) ) {
-      return;
-    }
-
-    // validate that the ssoid returned really exists
-    $sso_user = self::validate_ssoid( sanitize_text_field( $_POST['ssoid'] ) );
-
-    // bail if ssoid validation failed
-    if ( ! $sso_user ) {
-      return;
-    }
-
-    // check that user is active in sso
-    $sso_user_active = self::login_check_is_sso_user_active( $sso_user );
-
-    // bail if user is not active in sso
-    if ( ! $sso_user_active ) {
-      // logout
-      do_action( 'wp_login_failed', '' );
-      wp_logout();
-
-      // do our custom action allowing developers to hook
-      do_action( 'avoine_sso_login_failed' );
-
-      // redirect to better place, defauls to login url
-      wp_safe_redirect( apply_filters( 'avoine_sso_login_redirect_failed', wp_login_url() ) );
-      return;
-    }
-
-    // get wp user attached to this sso user, function tries to create a one if not existing
-    $wp_user = self::get_wp_user( $sso_user );
-
-    // bail if no attached user
-    if ( ! is_a( $wp_user, 'WP_User' ) ) {
-      // logout
-      do_action( 'wp_login_failed', '' );
-      wp_logout();
-
-      // do our custom action allowing developers to hook
-      do_action( 'avoine_sso_login_failed' );
-
-      // redirect to better place, defauls to login url
-      wp_safe_redirect( apply_filters( 'avoine_sso_login_redirect_failed', wp_login_url() ) );
-      return;
-    }
-
-    // update WP user SSO idp for later activity checks
-    update_user_meta( $wp_user->ID, 'avoine_sso_idp', $sso_user->idp );
-
-    // update WP user SSO ID
-    update_user_meta( $wp_user->ID, 'avoine_sso_' . $sso_user->idp . '_ssoid', $sso_user->id );
-
-    // do our custom action allowing developers to hook
-    do_action( 'avoine_sso_before_sso_login', $wp_user, $sso_user );
-
-    // log our user in
-    wp_set_current_user( $wp_user->ID, $wp_user->user_login );
-    wp_set_auth_cookie( $wp_user->ID, true );
-
-    // do login actions
-    do_action( 'wp_login', $wp_user->user_login, $wp_user );
-    do_action( 'avoine_sso_login', $wp_user->user_login, $wp_user );
-  } // end capture_login_redirect
-
-  /**
-   * If logged out user was from SSO, send further down the line
-   * to perform also SSO logout.
-   *
-   * @since 1.1.0
-   */
-  public static function maybe_redirect_sso_user_to_sso_logout( $user_id ) {
-    if ( self::is_sso_user( $user_id ) ) {
-      wp_redirect( apply_filters( 'avoine_sso_logout_url', 'https://tunnistus.avoine.fi/sso-logout/' ) );
-      exit;
-    }
-  } // end maybe_redirect_sso_user_to_sso_logout
-
-  /**
-   *  Check if request is to logout sso user out. Request comes from
-   *  Avoine logout page in hidden iframe.
-   *
-   *  @since  0.1.0
-   */
-  public static function capture_sso_logout() {
-    // if user is not logged in, there's no need to try to logout
-    if ( ! is_user_logged_in() ) {
-      return;
-    }
-
-    // bail if request is not coming to sso logout url
-    if ( 'sso-logout' !== ltrim( untrailingslashit( wp_parse_url( $_SERVER['REQUEST_URI'] )['path'] ), '/' ) ) {
-      return;
-    }
-
-    // do logout if current user is sso user
-    if ( self::is_sso_user() ) {
-      // return 200 for Avoine logout page iframe to work correctly
-      status_header( 200 );
-
-      // do the logout
-      wp_logout();
-      wp_set_current_user( 0 );
-
-      // dun our action allowing developers to hook
-      do_action( 'avoine_sso_after_logout' );
-
-      // show logout message in case user sees the sso logput page and stop further execution
-      echo apply_filters( 'avoine_sso_logout_message', 'You have been logged out. <a href="' . home_url() . '">Back to the site.</a>' );
-      exit;
-    }
-
-    // redirect logged in user to home url if not sso user
-    wp_safe_redirect( apply_filters( 'avoine_sso_logout_redirect_non_sso_user', home_url() ) );
-    exit;
-  } // end capture_sso_logout
-
-  /**
-   *  Do requests to Avoine SSO server.
-   *
-   *  @since  0.1.0
-   *  @return mixed  boolean false if sso call failed, result data id succesfull
-   */
-  private static function call_sso_service( $sso_user_id = null, $method = 'GetUser' ) {
-    // gather data for request
-    $body = wp_json_encode( array(
-      'id'      => wp_generate_uuid4(),
-      'method'  => $method,
-      'params'  => array(
-        apply_filters( 'avoine_sso_communications_key', getenv( 'AVOINE_SSO_KEY' ) ),
-        $sso_user_id,
-      ),
-      'jsonrpc' => '2.0',
-    ) );
-
-    // do the request
-    $request = wp_remote_post( 'https://tunnistus.avoine.fi/mmserver', array(
-      'body'  => $body,
-    ) );
-
-    // bail if request returned something else than 200 OK
-    if ( 200 !== wp_remote_retrieve_response_code( $request ) ) {
-      return false;
-    }
-
-    // get request result body
-    $response = wp_remote_retrieve_body( $request );
-
-    // bail if empty response
-    if ( empty( $response ) ) {
-      return false;
-    }
-
-    // response is always json, so decode it
-    $response = json_decode( $response );
-
-    // bail if response does not have unique id
-    if ( ! isset( $response->id ) ) {
-      return false;
-    }
-
-    // bail if no result
-    if ( ! isset( $response->result ) ) {
-      return false;
-    }
-
-    return $response->result;
-  } // end call_sso_service
-
-  /**
-   *  Validate that sso ID given actually exists in Avoine sso.
-   *
-   *  @since  0.1.0
-   *  @param  string  $ssoid SSO ID.
-   *  @return mixed          boolean false if not vaid sso id, sso user object if valid
-   */
-  private static function validate_ssoid( $ssoid = null ) {
-    if ( empty( $ssoid ) ) {
-      return false;
-    }
-
-    $result = self::call_sso_service( $ssoid );
-
-    return $result;
-  } // end validate_ssoid
-
-  /**
-   *  Get all sso user infrmation the service has.
-   *
-   *  @since  0.1.0
-   *  @param  string  $ssoid SSO ID
-   *  @return mixed          boolean false or sso user object
-   */
-  private static function get_sso_user_information( $ssoid = null ) {
-    return self::call_sso_service( $ssoid, 'GetUserData' );
-  } // end get_sso_user_information
-
-  /**
-   *  During the login process, check that sso user is active. Defaults always to
-   *  active (boolean true), developrs can add  their own checks with filter.
-   *
-   *  @since  0.1.0
-   *  @param  object  $sso_user sso user object.
-   *  @return boolean           true if sso user is active, false otherwise
-   */
-  private static function login_check_is_sso_user_active( $sso_user = null ) {
-    // bail if no sso user
-    if ( empty( $sso_user ) ) {
-      return false;
-    }
-
-    // get all information about the sso user
-    $sso_user_info = self::get_sso_user_information( $sso_user->id );
-
-    // bail if no user info
-    if ( empty( $sso_user_info ) ) {
-      return false;
-    }
-
-    /**
-     *  Allow developers to filter the active status.
-     *  $sso_user is sso user object
-     *  $sso_user_info is object containing all user information, which do alter based on which sso service we are using
-     */
-    $active = apply_filters( 'avoine_sso_login_check_is_user_active', true, $sso_user, $sso_user_info );
-
-    // allow developers to hook after login activity check
-    do_action( 'avoine_after_login_check_sso_is_user_active', $sso_user, $sso_user_info );
-
-    return $active;
-  } // end login_check_is_sso_user_active
-
-  /**
-   *  Function to check sso user actvity based on wp user id,
-   *  defaults to current user. Returns false if user is not
-   *  sso user, otherwise defaults to active (boolean true).
-   *  Developers can add their own checks with filter.
-   *
-   *  @since  0.1.0
-   *  @param  integer $wp_user_id ID of WP user which we want to check, defaults to current user.
-   *  @return boolean             false if not active or nor sso user, true otherwise.
-   */
-  public static function is_sso_user_active( $wp_user_id = null ) {
-    // default to current user
-    if ( empty( $wp_user_id ) ) {
-      $wp_user_id = get_current_user_id();
-    }
-
-    // bail if no user
-    if ( empty( $wp_user_id ) ) {
-      return false;
-    }
-
-    // try to get from cache
-    $active = wp_cache_get( 'user_activity_' . $wp_user_id,  'avoine_sso_login' );
-    if ( 'active' === $active ) {
-      return true;
-    }
-
-    // get sso idp for getting the sso id
-    $idp = get_user_meta( $wp_user_id, 'avoine_sso_idp', true );
-
-    // bail if no idp
-    if ( empty( $idp ) ) {
-      return false;
-    }
-
-    // get user sso id
-    $ssoid = get_user_meta( $wp_user_id, "avoine_sso_{$idp}_ssoid", true );
-
-    // bail if no sso id
-    if ( empty( $ssoid ) ) {
-      return false;
-    }
-
-    // get user information from sso server
-    $sso_user_info = self::get_sso_user_information( $ssoid );
-
-    // bail if no user infomation
-    if ( empty( $sso_user_info ) ) {
-      return false;
-    }
-
-    /**
-     *  Allow developers to filter the active status.
-     *  $wp_user_id is the wp user id checked
-     *  $ssoid is sso id for the user
-     *  $sso_user_info is object containing all user information, which do alter based on which sso service we are using
-     */
-    $active = apply_filters( 'avoine_sso_is_user_active', true, $wp_user_id, $ssoid, $sso_user_info );
-
-    // allow developers to hook after acivity check
-    do_action( 'avoine_after_sso_is_user_active', $wp_user_id, $active );
-
-    // save to cache
-    $save_active = 'not-active';
-    if ( $active ) {
-      $save_active = 'active';
-    }
-
-    $expiration = apply_filters( 'auth_cookie_expiration', DAY_IN_SECONDS * 2, $wp_user_id, false );
-    $expiration = apply_filters( 'avoine_sso_is_user_active_expiration', $expiration );
-
-    wp_cache_set( 'user_activity_' . $wp_user_id, $save_active, 'avoine_sso_login', $expiration );
-
-    return $active;
-  } // is_sso_user_active
-
-  /**
-   *  Get WP user attached to sso user. If user does not exist yet,
-   *  try co create a one.
-   *
-   *  @since  0.1.0
-   *  @param  object $sso_user sso user object.
-   *  @return mixed            WP_User object if user is attached, false otherwise.
-   */
-  private static function get_wp_user( $sso_user = null ) {
-    // bail if no sso user
-    if ( empty( $sso_user ) ) {
-      return false;
-    }
-
-    // try to get sso identifying unique id, bail if fails
-    $sso_mapping_id = self::get_sso_user_mapping_id( $sso_user );
-    if ( empty( $sso_mapping_id ) ) {
-      return false;
-    }
-
-    // get wp users attached to sso user
-    $users = get_users( array(
-      'meta_key'    => 'avoine_sso_mapping_id',
-      'meta_value'  => $sso_mapping_id,
-    ) );
-
-    // user does not exist, create a one
-    if ( empty( $users ) ) {
-      return self::create_wp_user( $sso_user );
-    }
-
-    return reset( $users );
-  } // end get_wp_user
-
-  /**
-   *  Create a WP user from sso user.
-   *
-   *  @since  0.1.0
-   *  @param  object $sso_user sso user object.
-   *  @return mixed            WP_User object if user is created, false otherwise.
-   */
-  private static function create_wp_user( $sso_user = null ) {
-    // bail if no sso user
-    if ( empty( $sso_user ) ) {
-      return false;
-    }
-
-    // get all user information from sso server
-    $sso_user_info = self::get_sso_user_information( $sso_user->id );
-
-    // bail if we cant get all information
-    if ( empty( $sso_user_info ) ) {
-      return false;
-    }
-
-    // try to get sso identifying unique id, bail if fails
-    $sso_mapping_id = self::get_sso_user_mapping_id( $sso_user );
-    if ( empty( $sso_mapping_id ) ) {
-      return false;
-    }
-
-    // make unique identifier for WP user in case sso local ids collide for some reason
-    $user_wp_unique = wp_date( 'U' ) . $sso_user->local_id;
-
-    // gather userdata for new user, developers can alter with filter
-    $userdata = apply_filters( 'avoine_sso_create_userdata', array(
-      'user_email' => $user_wp_unique . '@' . wp_parse_url( get_site_url() )['host'],
-      'user_login' => $user_wp_unique,
-      'first_name' => '',
-      'last_name'  => '',
-      'user_pass'  => null,
-    ), $sso_user, $sso_user_info );
-
-    // we want to have user pass as null always
-    $userdata['user_pass'] = null;
-
-    // try to create a new user
-    $new_user_id = wp_insert_user( $userdata );
-
-    // return false it user creation failed for some reason
-    if ( is_wp_error( $new_user_id ) ) {
-      return false;
-    }
-
-    // save sso details to newly created wp user
-    update_user_meta( $new_user_id, 'avoine_sso_mapping_id', $sso_mapping_id );
-    update_user_meta( $new_user_id, 'avoine_sso_idp', $sso_user->idp );
-    update_user_meta( $new_user_id, 'avoine_sso_' . $sso_user->idp . '_ssoid', $sso_user->id );
-    update_user_meta( $new_user_id, 'avoine_sso_' . $sso_user->idp . '_local_id', $sso_user->local_id );
-
-    // allow developers to hook after user is created
-    do_action( 'avoine_sso_after_create_user', $new_user_id, $sso_user, $sso_user_info );
-
-    return get_userdata( $new_user_id );
-  } // end create_wp_user
-
-  private static function get_sso_user_mapping_id( $sso_user ) {
-     // bail if no sso user
-    if ( empty( $sso_user ) ) {
-      return false;
-    }
-
-    // get all user information from sso server
-    $sso_user_info = self::get_sso_user_information( $sso_user->id );
-
-    // bail if we cant get all information
-    if ( empty( $sso_user_info ) ) {
-      return false;
-    }
-
-    $mapping_id = $sso_user->local_id;
-    $mapping_id = apply_filters( 'avoine_sso_user_mapping_id', $mapping_id, $sso_user, $sso_user_info );
-
-    return $mapping_id;
-  } // end get_sso_user_mapping_id
-} // end class
-
-add_action( 'plugins_loaded', array( 'Avoine_SSO_Login', 'get_instance' ) );
-
-// check class function for documentation
-function avoine_sso_get_login_url( $return_url = null ) {
-  return Avoine_SSO_Login::get_sso_login_url( $return_url );
-} // end avoine_sso_login_url
-
-// check class function for documentation
-function avoine_is_sso_user( $user_id = null ) {
-  return Avoine_SSO_Login::is_sso_user( $user_id );
-} // end avoine_is_sso_user
-
-// check class function for documentation
-function avoine_is_sso_user_active( $user_id = null ) {
-  return Avoine_SSO_Login::is_sso_user_active( $user_id );
-} // end avoine_is_sso_user_active
+function get_sso_service_id() {
+  $service_id = apply_filters( 'avoine-sso-login\service\id', getenv( 'AVOINE_SSO_SERVICE_ID' ) );
+  $service_id = apply_filters( 'avoine_sso_service_id', $service_id ); // legacy support
+  return $service_id;
+} // end get_api_key
+
+/**
+ * Get SSO service domain.
+ */
+function get_sso_service_domain() {
+  return apply_filters( 'avoine-sso-login\service\domain', 'tunnistus.avoine.fi' );
+} // end get_sso_service_domain
+
+/**
+ * Get SSO service communications key-
+ */
+function get_api_key() {
+  $api_key = apply_filters( 'avoine-sso-login\api\key', getenv( 'AVOINE_SSO_KEY' ) );
+  $api_key = apply_filters( 'avoine_sso_communications_key', $api_key ); // legacy support
+  return $api_key;
+} // end get_api_key
+
+/**
+ * Get full url for SSO API.
+ */
+function get_api_url() {
+  $sso_service_domain = get_sso_service_domain();
+  return apply_filters( 'avoine-sso-login\api\url', "https://{$sso_service_domain}/mmserver" );
+} // end get_api_url
+
+/**
+ * Get full login url for SSO.
+ * @param  string $return_url URL where to redirect user after login, defaults to home.
+ * @return string             Full SSO login url with redirect.
+ */
+function get_sso_login_url( $return_url = null ) {
+  $sso_service_domain = get_sso_service_domain();
+  $sso_service_id = get_sso_service_id();
+  if ( empty( $sso_service_domain ) || empty( $sso_service_id ) ) {
+    return false;
+  }
+
+  $return_url = ( ! empty( $return_url ) ) ? $return_url : home_url();
+  $return_url = apply_filters( 'avoine-sso-login\login\return_url', $return_url );
+  $return_url = apply_filters( 'avoine_sso_login_return_url', $return_url ); // legacy support
+  $return_url = urlencode( $return_url );
+
+  return "https://{$sso_service_domain}/sso-login/?service={$sso_service_id}&return={$return_url}";
+} // end get_sso_login_url
+
+/**
+ * Get full logout url for SSO.
+ */
+function get_sso_logout_url() {
+  $sso_service_domain = get_sso_service_domain();
+  if ( empty( $sso_service_domain ) ) {
+    return false;
+  }
+
+  $url = apply_filters( 'avoine-sso-login\logout\url', "https://{$sso_service_domain}/sso-logout/" );
+  $url = apply_filters( 'avoine_sso_logout_url', $url ); // legacy support
+  return $url;
+} // end get_sso_logout_url
+
+/**
+ * Get redirect url for failed sso logins.
+ */
+function get_sso_login_failed_redirect_url() {
+  $url = apply_filters( 'avoine-sso-login\failed\redirect_url', wp_login_url() );
+  $url = apply_filters( 'avoine_sso_login_redirect_failed', $url ); // legacy support
+  return $url;
+} // end get_sso_login_failed_redirect_url
