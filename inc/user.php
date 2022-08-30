@@ -178,7 +178,15 @@ function create_wp_user( $sso_user = null ) {
     return false;
   }
 
-  $userdata = get_user_data_for_wp( $sso_user );
+  // get all user information from SSO server
+  $sso_user_info = get_sso_user_information( $sso_user->id );
+
+  // bail if we cant get all information
+  if ( empty( $sso_user_info ) ) {
+    return false;
+  }
+
+  $userdata = get_user_data_for_wp( $sso_user, $sso_user_info );
   if ( ! $userdata ) {
     return false;
   }
@@ -227,14 +235,17 @@ function create_wp_user( $sso_user = null ) {
  * Get data used for creating and updating WP shadow user.
  *
  * @since  2.0.0
- * @param  object $sso_user SSO user.
- * @return boolean|array    Array containing data for WP user.
+ * @param  object $sso_user      SSO user.
+ * @param  array  $sso_user_info SSO user info from SSO server.
+ * @return boolean|array         Array containing data for WP user.
  */
-function get_user_data_for_wp( $sso_user ) {
+function get_user_data_for_wp( $sso_user, $sso_user_info = [] ) {
   $userdata = [];
 
   // get all user information from SSO server
-  $sso_user_info = get_sso_user_information( $sso_user->id );
+  if ( empty( $sso_user_info ) ) {
+    $sso_user_info = get_sso_user_information( $sso_user->id );
+  }
 
   // bail if we cant get all information
   if ( empty( $sso_user_info ) ) {
