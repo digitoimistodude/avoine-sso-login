@@ -99,7 +99,7 @@ function capture_sso_logout() {
     return;
   }
 
-  if ( ! isset( $_SERVER['REQUEST_URI']['path'] ) ) {
+  if ( ! isset( $_SERVER['REQUEST_URI'] ) ) {
     return;
   }
 
